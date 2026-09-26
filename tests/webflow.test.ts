@@ -44,10 +44,21 @@ describe("API de Webflow (fetch simulado)", () => {
     });
     const f = vi.fn(async (url: string) => Response.json(pagina(url.includes("offset=100") ? 100 : 0)));
     const r = await importarColeccion("t".repeat(30), COL, f as unknown as typeof fetch);
-    expect(f).toHaveBeenCalledTimes(2);
+    expect(f.mock.calls.filter(([u]) => String(u).includes("/items"))).toHaveLength(2);
     expect(r.filas).toHaveLength(120);
     expect(r.campos.find((c) => c.nombre === "creado")?.tipo).toBe("fecha");
     expect(r.campos.find((c) => c.nombre === "precio")?.tipo).toBe("numero");
+  });
+
+  it("reemplaza los ids de campos Reference por el nombre del item referenciado", async () => {
+    const CAT = "64a1b2c3d4e5f6a7b8c9d0ff";
+    const f = vi.fn(async (url: string) => {
+      if (url.endsWith(`/collections/${COL}`)) return Response.json({ fields: [{ slug: "category", type: "Reference", validations: { collectionId: CAT } }, { slug: "name", type: "PlainText" }] });
+      if (url.includes(`/collections/${CAT}/items`)) return Response.json({ items: [{ id: "c1", fieldData: { name: "Arquitectura" } }], pagination: { total: 1 } });
+      return Response.json({ items: [{ id: "p1", fieldData: { name: "Post", category: "c1" } }, { id: "p2", fieldData: { name: "Otro", category: "zz" } }], pagination: { total: 2 } });
+    });
+    const r = await importarColeccion("t".repeat(30), COL, f as unknown as typeof fetch);
+    expect(r.filas.map((x) => x.category)).toEqual(["Arquitectura", "zz"]);
   });
 
   it("explica token inválido o sin permisos", async () => {

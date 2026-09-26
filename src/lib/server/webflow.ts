@@ -52,17 +52,57 @@ export async function listarColecciones(token: string, fetcher: typeof fetch = f
   return porSitio.flat();
 }
 
-/** Trae todos los items de la colección, paginando de a 100, hasta MAX_FILAS. */
-export async function importarColeccion(token: string, collectionId: string, fetcher: typeof fetch = fetch): Promise<Importado> {
-  if (!/^[a-f0-9]{24}$/i.test(collectionId)) throw new FuenteRemotaError("Id de colección inválido.");
+async function todosLosItems(token: string, collectionId: string, tope: number, fetcher: typeof fetch): Promise<ItemWebflow[]> {
   const items: ItemWebflow[] = [];
   let total = Number.POSITIVE_INFINITY;
-  for (let offset = 0; offset < total && items.length < MAX_FILAS; offset += 100) {
+  for (let offset = 0; offset < total && items.length < tope; offset += 100) {
     const r = await webflow<{ items: ItemWebflow[]; pagination?: { total: number } }>(token, `/collections/${collectionId}/items?limit=100&offset=${offset}`, fetcher);
     items.push(...(r.items ?? []));
     total = r.pagination?.total ?? items.length;
     if (!r.items?.length) break;
   }
+  return items;
+}
+
+interface CampoWebflow {
+  slug: string;
+  type: string;
+  validations?: { collectionId?: string } | null;
+}
+
+/**
+ * Los campos Reference/MultiReference traen ids de items de otra colección. Los
+ * reemplazamos por el nombre del item referenciado para poder agrupar ("posts por categoría").
+ */
+async function resolverReferencias(token: string, collectionId: string, items: ItemWebflow[], fetcher: typeof fetch) {
+  let campos: CampoWebflow[] = [];
+  try {
+    campos = (await webflow<{ fields?: CampoWebflow[] }>(token, `/collections/${collectionId}`, fetcher)).fields ?? [];
+  } catch {
+    return; // Sin el esquema, quedan los ids: mejor eso que fallar la importación.
+  }
+  const refs = campos.filter((c) => (c.type === "Reference" || c.type === "MultiReference") && c.validations?.collectionId);
+  const nombres = new Map<string, string>();
+  await Promise.all(
+    [...new Set(refs.map((r) => r.validations?.collectionId as string))].map(async (id) => {
+      const rel = await todosLosItems(token, id, 1000, fetcher).catch(() => []);
+      for (const it of rel) nombres.set(it.id, String(it.fieldData?.name ?? it.fieldData?.title ?? it.id));
+    }),
+  );
+  for (const it of items) {
+    for (const r of refs) {
+      const v = it.fieldData?.[r.slug];
+      if (typeof v === "string") it.fieldData![r.slug] = nombres.get(v) ?? v;
+      else if (Array.isArray(v)) it.fieldData![r.slug] = v.map((x) => nombres.get(String(x)) ?? x);
+    }
+  }
+}
+
+/** Trae todos los items de la colección, paginando de a 100, hasta MAX_FILAS. */
+export async function importarColeccion(token: string, collectionId: string, fetcher: typeof fetch = fetch): Promise<Importado> {
+  if (!/^[a-f0-9]{24}$/i.test(collectionId)) throw new FuenteRemotaError("Id de colección inválido.");
+  const items = await todosLosItems(token, collectionId, MAX_FILAS, fetcher);
+  await resolverReferencias(token, collectionId, items, fetcher);
   const filas = filasDeItems(items).slice(0, MAX_FILAS);
   if (filas.length === 0) throw new FuenteRemotaError("La colección no tiene items.");
   return { filas, campos: inferirCampos(filas), truncado: items.length > MAX_FILAS };
