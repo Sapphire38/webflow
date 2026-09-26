@@ -3,7 +3,6 @@ import { destinoSeguro } from "@/lib/auth/redirect";
 import { BASE_PATH } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 /** Canje PKCE de los links de email (confirmación, magic link, recuperación). */
 export async function GET(request: NextRequest) {

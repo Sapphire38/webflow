@@ -4,7 +4,6 @@ import { destinoSeguro } from "@/lib/auth/redirect";
 import { BASE_PATH } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 /** Variante con token_hash (plantillas de email de Supabase con {{ .TokenHash }}). */
 export async function GET(request: NextRequest) {

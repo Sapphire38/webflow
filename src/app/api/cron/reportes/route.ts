@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 import { BASE_PATH } from "@/lib/env";
 import { correrVencidas } from "@/lib/server/envios";
 
-export const runtime = "edge";
 
 function autorizado(req: NextRequest) {
   const secreto = process.env.CRON_SECRET;

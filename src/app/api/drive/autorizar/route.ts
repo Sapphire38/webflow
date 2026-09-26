@@ -3,7 +3,6 @@ import { BASE_PATH } from "@/lib/env";
 import { crearState, driveConfigurado, urlConsentimiento, urlRedirect } from "@/lib/server/drive";
 import { createClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 export async function GET(request: NextRequest) {
   const { origin } = request.nextUrl;

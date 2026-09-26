@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server";
 import { BASE_PATH } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();

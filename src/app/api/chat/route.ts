@@ -15,7 +15,6 @@ import { herramientas } from "@/lib/server/tools";
 import { conIds, tituloDesde } from "@/lib/chat/titulo";
 import { createClient } from "@/lib/supabase/server";
 
-export const runtime = "edge";
 
 const bodySchema = z.object({
   id: z.string().min(1).max(64),
