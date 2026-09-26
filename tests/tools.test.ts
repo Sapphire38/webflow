@@ -81,6 +81,18 @@ describe("tools del chat", () => {
     expect(r.spec.proyeccion.errorPct).not.toBeNull();
   });
 
+  it("proyectar guarda los escenarios en la receta para que el dashboard los recalcule", async () => {
+    const { client } = supabaseFalso();
+    const consulta = { agruparPor: "fecha", granularidad: "semana" as const, operacion: "sumar" as const, campo: "costo" };
+    const escenarios = [{ nombre: "Córdoba +20%", cambioPct: 20, segmento: { planta: "Córdoba" } }];
+    const r = (await herramientas(client).proyectar.execute!({ titulo: "x", datasetId: "ds-1", consulta, horizonte: 4, escenarios }, opts)) as {
+      spec: { receta: { proyeccion: unknown }; proyeccion: { escenarios: { diferenciaPct: number }[] } };
+    };
+    expect(r.spec.receta.proyeccion).toEqual({ horizonte: 4, escenarios });
+    expect(r.spec.proyeccion.escenarios[0].diferenciaPct).toBeGreaterThan(0);
+    expect(r.spec.proyeccion.escenarios[0].diferenciaPct).toBeLessThan(20);
+  });
+
   it("proyectar explica cuando no hay historia suficiente", async () => {
     const { client } = supabaseFalso();
     const consulta = { agruparPor: "fecha", granularidad: "trimestre" as const, operacion: "contar" as const };

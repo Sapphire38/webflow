@@ -8,6 +8,7 @@ import {
   type Campo,
   type Consulta,
   ConsultaError,
+  consultaSchema,
   type Fila,
   type Granularidad,
   inicioDePeriodo,
@@ -30,8 +31,18 @@ const RESERVA_BACKTEST = 3;
 /** z de una normal para un rango del 80%: más angosto que el 95% y más honesto de leer. */
 const Z_80 = 1.2816;
 
+export const escenarioSchema = z.object({
+  nombre: z.string().trim().min(1).max(40).describe('Nombre corto, ej.: "Optimista", "Córdoba +20%"'),
+  cambioPct: z.number().min(-90).max(300).describe("Cambio porcentual sobre lo proyectado: 10 = +10%, -5 = -5%"),
+  segmento: consultaSchema.shape.filtros.describe(
+    "Opcional: filtros del segmento al que se aplica el cambio (ej.: {planta: 'Córdoba'}). Solo con sumar o contar",
+  ),
+});
+export type Escenario = z.infer<typeof escenarioSchema>;
+
 export const proyeccionSchema = z.object({
   horizonte: z.number().int().min(1).max(24).describe("Cuántos períodos proyectar hacia adelante"),
+  escenarios: z.array(escenarioSchema).max(3).optional().describe("Qué pasaría si: variantes de la proyección base"),
 });
 export type PedidoProyeccion = z.infer<typeof proyeccionSchema>;
 
@@ -40,9 +51,17 @@ export interface PuntoProyectado extends Par {
   alto: number;
 }
 
+export interface ResultadoEscenario {
+  nombre: string;
+  valores: Par[];
+  /** Cuánto cambia el horizonte completo contra la proyección base, en %. */
+  diferenciaPct: number;
+}
+
 export interface Proyeccion {
   metodo: Metodo;
   proyectado: PuntoProyectado[];
+  escenarios?: ResultadoEscenario[];
   /** Error porcentual medio al proyectar los últimos períodos conocidos (backtest). */
   errorPct: number | null;
   periodosEvaluados: number;
@@ -185,9 +204,30 @@ export function pronosticar(y: number[], g: Granularidad, etiquetas: string[]): 
   return { metodo, proyectado, errorPct, periodosEvaluados: periodos };
 }
 
+const suma = (xs: number[]) => xs.reduce((a, v) => a + v, 0);
+
+/**
+ * Un escenario sin segmento escala toda la proyección. Con segmento se proyecta ese
+ * segmento por separado y solo su parte cambia: "si Córdoba crece 20%" no mueve a Rosario.
+ * Eso solo tiene sentido si la métrica se puede sumar por partes.
+ */
+function aplicarEscenario(
+  e: Escenario,
+  base: PuntoProyectado[],
+  piso: number,
+  segmentoProyectado: () => number[],
+): ResultadoEscenario {
+  const factor = e.cambioPct / 100;
+  const delta = e.segmento ? segmentoProyectado().map((v) => v * factor) : base.map((p) => p.valor * factor);
+  const valores = base.map((p, i) => ({ etiqueta: p.etiqueta, valor: redondear(Math.max(piso, p.valor + delta[i])) }));
+  const totalBase = suma(base.map((p) => p.valor));
+  const diferenciaPct = totalBase === 0 ? 0 : redondear(((suma(valores.map((v) => v.valor)) - totalBase) / Math.abs(totalBase)) * 100);
+  return { nombre: e.nombre, valores, diferenciaPct };
+}
+
 /** Serie real + proyección, listas para graficar. El período en curso se proyecta, no se muestra. */
 export function proyectar(filas: Fila[], campos: Campo[], consulta: Consulta, pedido: PedidoProyeccion): { historico: Par[]; proyeccion: Proyeccion } {
-  const { horizonte } = proyeccionSchema.parse(pedido);
+  const { horizonte, escenarios } = proyeccionSchema.parse(pedido);
   const serie = serieTemporal(filas, campos, consulta);
   const g = serie.granularidad;
   const cerrados = serie.parcial ? serie.puntos.slice(0, -1) : serie.puntos;
@@ -202,8 +242,27 @@ export function proyectar(filas: Fila[], campos: Campo[], consulta: Consulta, pe
     g,
     etiquetas,
   );
+  const aditiva = consulta.operacion === "sumar" || consulta.operacion === "contar";
+  const piso = cerrados.every((p) => p.valor >= 0) ? 0 : Number.NEGATIVE_INFINITY;
+  const resultados = escenarios?.map((e) => {
+    if (e.segmento && !aditiva)
+      throw new ConsultaError(
+        `El escenario "${e.nombre}" cambia un segmento, y eso solo se puede con sumar o contar. Sacale el segmento o cambiá la operación.`,
+        "ESCENARIO_NO_ADITIVO",
+      );
+    return aplicarEscenario(e, base.proyectado, piso, () => {
+      // Se alinea con los mismos períodos de la base: donde el segmento no tuvo filas, aportó 0.
+      const parte = serieTemporal(filas, campos, { ...consulta, filtros: { ...consulta.filtros, ...e.segmento } });
+      const porClave = new Map(parte.puntos.map((p) => [p.clave, p.valor]));
+      return pronosticar(
+        cerrados.map((p) => porClave.get(p.clave) ?? 0),
+        g,
+        etiquetas,
+      ).proyectado.map((p) => p.valor);
+    });
+  });
   return {
     historico: cerrados.map((p) => ({ etiqueta: p.etiqueta, valor: redondear(p.valor) })),
-    proyeccion: { ...base, parcial: serie.parcial },
+    proyeccion: { ...base, ...(resultados && { escenarios: resultados }), parcial: serie.parcial },
   };
 }
