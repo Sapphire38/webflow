@@ -5,9 +5,8 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateText } from "ai";
-import { type ChartSpec, calcularKpi, type Presentacion, presentacionSchema } from "@/lib/data/chart";
+import { type ChartSpec, calcularKpi, type Presentacion, presentacionSchema, resolverReceta } from "@/lib/data/chart";
 import { sinCjk } from "@/lib/chat/limpiar";
-import { agregar } from "@/lib/data/engine";
 import { type Estilo, instruccionesDeEstilo, leerEstilo } from "@/lib/data/estilo";
 import { cargadorDeDatasets } from "./datasets";
 import { modelo } from "./llm";
@@ -35,8 +34,8 @@ export async function resolverWidgetsCon(supabase: SupabaseClient, userId: strin
         const spec = w.spec as Omit<ChartSpec, "datos">;
         const ds = await cargar(spec.receta.datasetId);
         if (!ds) throw new Error("El dataset fue borrado.");
-        const datos = agregar(ds.filas, ds.campos, spec.receta.consulta);
-        return { id: w.id, titulo: w.titulo, presentacion, spec: { ...spec, titulo: w.titulo, datos } };
+        const calculado = resolverReceta(ds.filas, ds.campos, spec.receta);
+        return { id: w.id, titulo: w.titulo, presentacion, spec: { ...spec, titulo: w.titulo, ...calculado } };
       } catch (e) {
         return { id: w.id, titulo: w.titulo, presentacion, spec: null, error: (e as Error).message };
       }

@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tool } from "ai";
 import { z } from "zod";
-import { armarSpec, graficarSchema } from "@/lib/data/chart";
+import { armarSpec, graficarSchema, proyectarSchema } from "@/lib/data/chart";
 import { agregar, ConsultaError, consultaSchema } from "@/lib/data/engine";
+import { proyectar } from "@/lib/data/proyeccion";
 import { cargadorDeDatasets, listarDatasets } from "./datasets";
 
 /** Los errores vuelven al modelo como datos, así puede corregirse en el paso siguiente. */
@@ -69,6 +70,22 @@ export function herramientas(supabase: SupabaseClient) {
           const d = await dataset(datasetId);
           const datos = agregar(d.filas, d.campos, consulta);
           return { spec: armarSpec(viz, datos, { datasetId, consulta }), dataset: d.nombre };
+        } catch (e) {
+          return comoError(e);
+        }
+      },
+    }),
+    proyectar: tool({
+      description:
+        "Proyecta hacia adelante una métrica agrupada por fecha (ej.: costo mensual de los próximos 6 meses) y la dibuja con lo real, lo proyectado y un rango probable del 80%. Devuelve también el error medido al proyectar los últimos períodos conocidos. Toda cifra futura sale de acá: nunca extrapoles a mano.",
+      inputSchema: proyectarSchema,
+      execute: async ({ datasetId, consulta, horizonte, titulo, unidad }) => {
+        try {
+          const d = await dataset(datasetId);
+          const pedido = { horizonte };
+          const { historico, proyeccion } = proyectar(d.filas, d.campos, consulta, pedido);
+          const spec = armarSpec({ tipo: "linea", titulo, unidad }, historico, { datasetId, consulta, proyeccion: pedido }, proyeccion);
+          return { spec, dataset: d.nombre };
         } catch (e) {
           return comoError(e);
         }

@@ -22,6 +22,7 @@ const ETIQUETAS: Record<string, string> = {
   ver_muestra: "Leyendo una muestra",
   agregar_dataset: "Haciendo las cuentas",
   graficar: "Armando el gráfico",
+  proyectar: "Proyectando",
 };
 
 const SUGERENCIAS = [
@@ -251,7 +252,7 @@ function MensajeAsistente({
           );
         }
         const salida = p.output as { spec?: ChartSpec; error?: string; dataset?: string } | undefined;
-        if (nombre === "graficar" && p.state === "output-available" && salida?.spec) {
+        if ((nombre === "graficar" || nombre === "proyectar") && p.state === "output-available" && salida?.spec) {
           return (
             <figure key={key} className="rise rounded-2xl border border-line bg-card p-5">
               <figcaption className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
