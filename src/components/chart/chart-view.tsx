@@ -12,6 +12,7 @@ import {
   LineChart,
   Pie,
   PieChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -96,6 +97,18 @@ function TipProyeccion({
   );
 }
 
+function TextoMeta({ meta, unidad }: { meta: NonNullable<NonNullable<ChartSpec["proyeccion"]>["meta"]>; unidad?: string }) {
+  const objetivo = `${meta.tipo === "acumulado" ? (meta.sentido === "bajar" ? "Acumular como máximo" : "Acumular") : meta.sentido === "bajar" ? "Bajar a" : "Llegar a"} ${compacto(meta.valor)}${unidad ? ` ${unidad}` : ""}`;
+  return (
+    <p className="mt-3 text-sm text-ink-2">
+      <span className="font-medium text-ink">{objetivo}:</span>{" "}
+      {meta.alcanzaEn
+        ? `se alcanza en ${meta.alcanzaEn} (probabilidad ${meta.probabilidad}%)`
+        : `no se alcanza en el horizonte (probabilidad al final: ${meta.probabilidad}%)`}
+    </p>
+  );
+}
+
 /** Lo real en línea llena, lo proyectado punteado y el rango probable sombreado detrás. */
 function GraficoProyeccion({ spec, alto }: { spec: ChartSpec; alto: number }) {
   const p = spec.proyeccion!;
@@ -130,6 +143,9 @@ function GraficoProyeccion({ spec, alto }: { spec: ChartSpec; alto: number }) {
             <Area type="monotone" dataKey="banda" stroke="none" fill="var(--chart-1)" fillOpacity={0.14} isAnimationActive={false} />
             <Line type="monotone" dataKey="real" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
             <Line type="monotone" dataKey="proyectado" stroke="var(--chart-1)" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 5 }} />
+            {p.meta?.tipo === "periodo" && (
+              <ReferenceLine y={p.meta.valor} stroke="var(--ink-3)" strokeDasharray="4 3" label={{ value: "Meta", position: "insideTopLeft", fill: "var(--ink-3)", fontSize: 11 }} />
+            )}
             {escenarios.map((e, i) => (
               <Line key={e.nombre} type="monotone" dataKey={`esc${i}`} stroke={COLOR_ESCENARIO[i]} strokeWidth={2} strokeDasharray="2 4" dot={false} activeDot={{ r: 4 }} />
             ))}
@@ -154,6 +170,7 @@ function GraficoProyeccion({ spec, alto }: { spec: ChartSpec; alto: number }) {
           ))}
         </ul>
       )}
+      {p.meta && <TextoMeta meta={p.meta} unidad={spec.unidad} />}
       <p className="mt-3 text-xs text-ink-3">
         Proyección por {METODO[p.metodo]} · banda: rango probable (80%)
         {p.errorPct !== null && ` · en los últimos ${p.periodosEvaluados} períodos le erró ±${formatoNumero(p.errorPct)}%`}

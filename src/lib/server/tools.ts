@@ -77,12 +77,12 @@ export function herramientas(supabase: SupabaseClient) {
     }),
     proyectar: tool({
       description:
-        "Proyecta hacia adelante una métrica agrupada por fecha (ej.: costo mensual de los próximos 6 meses) y la dibuja con lo real, lo proyectado y un rango probable del 80%. Acepta escenarios de qué pasaría si (cambios porcentuales, en total o por segmento). Devuelve también el error medido al proyectar los últimos períodos conocidos. Toda cifra futura sale de acá: nunca extrapoles a mano.",
+        "Proyecta hacia adelante una métrica agrupada por fecha (ej.: costo mensual de los próximos 6 meses) y la dibuja con lo real, lo proyectado y un rango probable del 80%. Acepta escenarios de qué pasaría si (cambios porcentuales, en total o por segmento) y una meta para saber cuándo se alcanza y con qué probabilidad. Devuelve también el error medido al proyectar los últimos períodos conocidos. Toda cifra futura sale de acá: nunca extrapoles a mano.",
       inputSchema: proyectarSchema,
-      execute: async ({ datasetId, consulta, horizonte, escenarios, titulo, unidad }) => {
+      execute: async ({ datasetId, consulta, horizonte, escenarios, meta, titulo, unidad }) => {
         try {
           const d = await dataset(datasetId);
-          const pedido = { horizonte, ...(escenarios?.length && { escenarios }) };
+          const pedido = { horizonte, ...(escenarios?.length && { escenarios }), ...(meta && { meta }) };
           const { historico, proyeccion } = proyectar(d.filas, d.campos, consulta, pedido);
           const spec = armarSpec({ tipo: "linea", titulo, unidad }, historico, { datasetId, consulta, proyeccion: pedido }, proyeccion);
           return { spec, dataset: d.nombre };

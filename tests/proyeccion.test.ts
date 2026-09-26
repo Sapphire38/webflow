@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolverReceta } from "@/lib/data/chart";
 import { ConsultaError, type Fila, inferirCampos, serieTemporal } from "@/lib/data/engine";
 import { pronosticar, proyectar } from "@/lib/data/proyeccion";
+import { contextoProyeccion } from "@/lib/server/reportes";
 
 /** Una fila por mes, el último día, con el valor dado: meses cerrados. */
 function mensual(valores: number[], desde = [2024, 0]): Fila[] {
@@ -134,6 +135,58 @@ describe("escenarios", () => {
   it("una caída del 90% deja el 10% de la base", () => {
     const { proyeccion } = proyectar(filas, campos, consulta, { horizonte: 1, escenarios: [{ nombre: "Crisis", cambioPct: -90 }] });
     expect(proyeccion.escenarios?.[0].valores[0].valor).toBeCloseTo(7.7);
+  });
+});
+
+describe("metas", () => {
+  const filas = mensual([10, 20, 30, 40, 50, 60]);
+  const campos = inferirCampos(filas);
+  const conMeta = (meta: { valor: number; tipo?: "periodo" | "acumulado"; sentido?: "superar" | "bajar" }) =>
+    proyectar(filas, campos, consulta, { horizonte: 3, meta }).proyeccion.meta;
+
+  it("dice en qué período se alcanza una meta por período", () => {
+    // Recta perfecta: sin desvío, la probabilidad es de todo o nada.
+    expect(conMeta({ valor: 80 })).toMatchObject({ alcanzaEn: "ago/24", probabilidad: 100, tipo: "periodo", sentido: "superar" });
+  });
+
+  it("si no se alcanza en el horizonte lo dice", () => {
+    expect(conMeta({ valor: 500 })).toMatchObject({ alcanzaEn: null, probabilidad: 0 });
+  });
+
+  it("una meta acumulada suma los períodos proyectados", () => {
+    // 70 + 80 = 150 al segundo período.
+    expect(conMeta({ valor: 150, tipo: "acumulado" })?.alcanzaEn).toBe("ago/24");
+  });
+
+  it("un tope acumulado se evalúa al final del horizonte", () => {
+    // 70 + 80 + 90 = 240.
+    expect(conMeta({ valor: 200, tipo: "acumulado", sentido: "bajar" })).toMatchObject({ alcanzaEn: null, probabilidad: 0 });
+    expect(conMeta({ valor: 250, tipo: "acumulado", sentido: "bajar" })?.alcanzaEn).toBe("sep/24");
+  });
+
+  it("con ruido la probabilidad refleja la incertidumbre", () => {
+    const ruido = [100, 120, 95, 130, 110, 140, 105, 150, 125, 160];
+    const f = mensual(ruido);
+    const p = proyectar(f, inferirCampos(f), consulta, { horizonte: 3, meta: { valor: 1e6 } }).proyeccion;
+    const cerca = proyectar(f, inferirCampos(f), consulta, { horizonte: 3, meta: { valor: p.proyectado[0].valor } }).proyeccion;
+    expect(p.meta?.probabilidad).toBe(0);
+    expect(cerca.meta?.probabilidad).toBe(50);
+  });
+});
+
+describe("contextoProyeccion", () => {
+  it("le da al reporte las cifras, el rango, el error y la meta", () => {
+    const filas = mensual([10, 20, 30, 40, 50, 60]);
+    const { proyeccion } = proyectar(filas, inferirCampos(filas), consulta, {
+      horizonte: 1,
+      escenarios: [{ nombre: "Suba", cambioPct: 10 }],
+      meta: { valor: 70 },
+    });
+    const texto = contextoProyeccion(proyeccion, "ARS");
+    expect(texto).toContain("error medido en el backtest: ±0%");
+    expect(texto).toContain("jul/24: 70 ARS (entre 70 y 70)");
+    expect(texto).toContain('Escenario "Suba": +10%');
+    expect(texto).toContain("se alcanza en jul/24 con probabilidad 100%");
   });
 });
 
