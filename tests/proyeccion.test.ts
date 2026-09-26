@@ -92,6 +92,51 @@ describe("proyectar", () => {
   });
 });
 
+describe("escenarios", () => {
+  /** Dos plantas que crecen distinto: A suma 10 por mes, B suma 1. */
+  const filas: Fila[] = [
+    ...mensual([10, 20, 30, 40, 50, 60]).map((f) => ({ ...f, planta: "A" })),
+    ...mensual([1, 2, 3, 4, 5, 6]).map((f) => ({ ...f, planta: "B" })),
+  ];
+  const campos = inferirCampos(filas);
+
+  it("sin segmento escala toda la proyección", () => {
+    const { proyeccion } = proyectar(filas, campos, consulta, { horizonte: 2, escenarios: [{ nombre: "+10%", cambioPct: 10 }] });
+    expect(proyeccion.proyectado.map((p) => p.valor)).toEqual([77, 88]);
+    expect(proyeccion.escenarios?.[0]).toEqual({
+      nombre: "+10%",
+      valores: [
+        { etiqueta: "jul/24", valor: 84.7 },
+        { etiqueta: "ago/24", valor: 96.8 },
+      ],
+      diferenciaPct: 10,
+    });
+  });
+
+  it("con segmento solo cambia la parte de ese segmento", () => {
+    const { proyeccion } = proyectar(filas, campos, consulta, {
+      horizonte: 1,
+      escenarios: [{ nombre: "B se duplica", cambioPct: 100, segmento: { planta: "B" } }],
+    });
+    // Base 77 (A proyecta 70, B proyecta 7): duplicar B suma 7.
+    expect(proyeccion.escenarios?.[0].valores[0].valor).toBe(84);
+  });
+
+  it("no deja cambiar un segmento de una métrica que no se suma por partes", () => {
+    expect(() =>
+      proyectar(filas, campos, { ...consulta, operacion: "promedio" }, {
+        horizonte: 1,
+        escenarios: [{ nombre: "x", cambioPct: 10, segmento: { planta: "B" } }],
+      }),
+    ).toThrow(/solo se puede con sumar o contar/);
+  });
+
+  it("una caída del 90% deja el 10% de la base", () => {
+    const { proyeccion } = proyectar(filas, campos, consulta, { horizonte: 1, escenarios: [{ nombre: "Crisis", cambioPct: -90 }] });
+    expect(proyeccion.escenarios?.[0].valores[0].valor).toBeCloseTo(7.7);
+  });
+});
+
 describe("resolverReceta", () => {
   const filas = mensual([10, 20, 30, 40, 50, 60]);
   const campos = inferirCampos(filas);

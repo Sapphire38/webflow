@@ -47,14 +47,28 @@ const METODO: Record<NonNullable<ChartSpec["proyeccion"]>["metodo"], string> = {
   holt_winters: "tendencia con estacionalidad",
 };
 
+const COLOR_ESCENARIO = ["var(--chart-2)", "var(--chart-3)", "var(--chart-5)"];
+
 interface PuntoGrafico {
   etiqueta: string;
   real?: number;
   proyectado?: number;
   banda?: [number, number];
+  /** Valor de cada escenario, en el mismo orden que `proyeccion.escenarios`. */
+  [escenario: `esc${number}`]: number | undefined;
 }
 
-function TipProyeccion({ active, payload, unidad }: { active?: boolean; payload?: { payload: PuntoGrafico }[]; unidad?: string }) {
+function TipProyeccion({
+  active,
+  payload,
+  unidad,
+  escenarios = [],
+}: {
+  active?: boolean;
+  payload?: { payload: PuntoGrafico }[];
+  unidad?: string;
+  escenarios?: string[];
+}) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   const esReal = d.real !== undefined;
@@ -71,6 +85,13 @@ function TipProyeccion({ active, payload, unidad }: { active?: boolean; payload?
           entre {formatoNumero(d.banda[0])} y {formatoNumero(d.banda[1])}
         </p>
       )}
+      {!esReal &&
+        escenarios.map((nombre, i) => (
+          <p key={nombre} className="num mt-0.5 flex items-center gap-1.5 text-ink-2">
+            <span className="size-2 rounded-sm" style={{ background: COLOR_ESCENARIO[i] }} />
+            {nombre}: {formatoNumero(d[`esc${i}`] ?? 0)}
+          </p>
+        ))}
     </div>
   );
 }
@@ -78,13 +99,25 @@ function TipProyeccion({ active, payload, unidad }: { active?: boolean; payload?
 /** Lo real en línea llena, lo proyectado punteado y el rango probable sombreado detrás. */
 function GraficoProyeccion({ spec, alto }: { spec: ChartSpec; alto: number }) {
   const p = spec.proyeccion!;
+  const escenarios = p.escenarios ?? [];
   const ultimo = spec.datos[spec.datos.length - 1];
   const puntos: PuntoGrafico[] = [
     ...spec.datos.map((d) => ({ etiqueta: d.etiqueta, real: d.valor })),
-    ...p.proyectado.map((d) => ({ etiqueta: d.etiqueta, proyectado: d.valor, banda: [d.bajo, d.alto] as [number, number] })),
+    ...p.proyectado.map((d, j) => ({
+      etiqueta: d.etiqueta,
+      proyectado: d.valor,
+      banda: [d.bajo, d.alto] as [number, number],
+      ...Object.fromEntries(escenarios.map((e, i) => [`esc${i}`, e.valores[j]?.valor])),
+    })),
   ];
-  // El último punto real también abre la línea proyectada, así no queda un salto entre las dos.
-  if (ultimo) puntos[spec.datos.length - 1] = { ...puntos[spec.datos.length - 1], proyectado: ultimo.valor, banda: [ultimo.valor, ultimo.valor] };
+  // El último punto real también abre las líneas proyectadas, así no queda un salto entre las dos.
+  if (ultimo)
+    puntos[spec.datos.length - 1] = {
+      ...puntos[spec.datos.length - 1],
+      proyectado: ultimo.valor,
+      banda: [ultimo.valor, ultimo.valor],
+      ...Object.fromEntries(escenarios.map((_, i) => [`esc${i}`, ultimo.valor])),
+    };
   return (
     <div>
       <div style={{ height: alto }} className="w-full">
@@ -93,13 +126,34 @@ function GraficoProyeccion({ spec, alto }: { spec: ChartSpec; alto: number }) {
             <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 4" />
             <XAxis dataKey="etiqueta" tick={eje} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={16} />
             <YAxis tick={eje} tickLine={false} axisLine={false} tickFormatter={compacto} />
-            <Tooltip content={<TipProyeccion unidad={spec.unidad} />} cursor={{ stroke: "var(--line)" }} />
+            <Tooltip content={<TipProyeccion unidad={spec.unidad} escenarios={escenarios.map((e) => e.nombre)} />} cursor={{ stroke: "var(--line)" }} />
             <Area type="monotone" dataKey="banda" stroke="none" fill="var(--chart-1)" fillOpacity={0.14} isAnimationActive={false} />
             <Line type="monotone" dataKey="real" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
             <Line type="monotone" dataKey="proyectado" stroke="var(--chart-1)" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 5 }} />
+            {escenarios.map((e, i) => (
+              <Line key={e.nombre} type="monotone" dataKey={`esc${i}`} stroke={COLOR_ESCENARIO[i]} strokeWidth={2} strokeDasharray="2 4" dot={false} activeDot={{ r: 4 }} />
+            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      {escenarios.length > 0 && (
+        <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-ink-2">
+          <li className="flex items-center gap-1.5">
+            <span className="h-0.5 w-4 border-t-2 border-dashed" style={{ borderColor: "var(--chart-1)" }} />
+            Base
+          </li>
+          {escenarios.map((e, i) => (
+            <li key={e.nombre} className="flex items-center gap-1.5">
+              <span className="h-0.5 w-4 border-t-2 border-dotted" style={{ borderColor: COLOR_ESCENARIO[i] }} />
+              {e.nombre}
+              <span className="num text-ink-3">
+                {e.diferenciaPct > 0 ? "+" : ""}
+                {formatoNumero(e.diferenciaPct)}%
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <p className="mt-3 text-xs text-ink-3">
         Proyección por {METODO[p.metodo]} · banda: rango probable (80%)
         {p.errorPct !== null && ` · en los últimos ${p.periodosEvaluados} períodos le erró ±${formatoNumero(p.errorPct)}%`}
