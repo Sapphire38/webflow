@@ -14,6 +14,8 @@ export default async function DatosPage({ searchParams }: PageProps<"/datos">) {
   const sp = await searchParams;
   const { supabase } = await requireUser();
   const [datasets, con] = await Promise.all([listarDatasets(supabase), conexion(supabase)]);
+  // `?drive=` vuelve del OAuth de Google; `?fuente=webflow` llega desde el tutorial.
+  const tabInicial = sp.drive ? "drive" : sp.fuente === "webflow" ? "webflow" : undefined;
   const tieneEjemplo = datasets.some((d) => d.origen === "ejemplo");
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 md:px-8 md:py-12">
@@ -21,7 +23,8 @@ export default async function DatosPage({ searchParams }: PageProps<"/datos">) {
       <PageHeader eyebrow="Fuentes" titulo="Tus datos">
         {!tieneEjemplo && <CargarEjemplo />}
       </PageHeader>
-      <Fuentes drive={{ configurado: driveConfigurado(), email: con ? (con.email ?? "tu cuenta") : null }} tabInicial={sp.drive ? "drive" : undefined} />
+      {/* El key hace que cambie de pestaña aunque ya estés en /datos (el tab inicial es estado). */}
+      <Fuentes key={tabInicial} drive={{ configurado: driveConfigurado(), email: con ? (con.email ?? "tu cuenta") : null }} tabInicial={tabInicial} />
       {datasets.length === 0 ? (
         <Vacio titulo="Todavía no hay datasets">Subí un CSV, importá una hoja de Google, conectá una API o cargá el ejemplo para probar.</Vacio>
       ) : (

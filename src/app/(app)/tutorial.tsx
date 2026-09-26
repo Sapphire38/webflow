@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowLeft, ArrowRight, BarChart3, CircleHelp, Database, FileText, MessageSquare, Pin, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, CircleHelp, Database, FileText, LayoutTemplate, MessageSquare, Pin, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ type Paso = {
   texto: React.ReactNode;
   items?: string[];
   ir?: { href: string; label: string };
+  /** Resalta el paso con una etiqueta: para lo que más queremos que se vea. */
+  destacado?: string;
 };
 
 const PASOS: Paso[] = [
@@ -27,7 +29,7 @@ const PASOS: Paso[] = [
         un motor determinístico hace las cuentas: <strong>los números no los inventa la IA</strong>.
       </>
     ),
-    items: ["Cargás datos", "Preguntás en el chat", "Guardás los gráficos en un dashboard", "Generás un reporte ejecutivo"],
+    items: ["Cargás datos, incluso el CMS de tu sitio de Webflow", "Preguntás en el chat", "Guardás los gráficos en un dashboard", "Generás un reporte ejecutivo"],
   },
   {
     icono: Database,
@@ -39,13 +41,33 @@ const PASOS: Paso[] = [
       "Importar una hoja de Google Sheets por link",
       "Conectar una API REST que devuelva JSON",
       "Importar planillas desde Google Drive",
+      "Vincular el CMS de tu sitio de Webflow con un token",
       "Actualizar una fuente remota con un click",
     ],
     ir: { href: "/datos", label: "Ir a Datos" },
   },
   {
+    icono: LayoutTemplate,
+    eyebrow: "Paso 2 · Webflow",
+    titulo: "Tu CMS de Webflow, como dataset",
+    destacado: "Integración Webflow",
+    texto: (
+      <>
+        Pegá el token de tu sitio y cada colección del CMS se vuelve un dataset: productos, posts, casos, lo que tengas. Después le preguntás
+        al chat <strong>cuántos posts publicaste por mes</strong> o qué categoría crece más, y lo fijás en un dashboard.
+      </>
+    ),
+    items: [
+      "En Webflow: Site settings → Apps & integrations → API access",
+      "Generá un token con lectura de Sites y CMS",
+      "En Datos, pestaña Webflow CMS: pegalo y elegí la colección",
+      "El token se guarda cifrado; con un click traés los items nuevos",
+    ],
+    ir: { href: "/datos?fuente=webflow", label: "Conectar Webflow" },
+  },
+  {
     icono: MessageSquare,
-    eyebrow: "Paso 2 · Chat",
+    eyebrow: "Paso 3 · Chat",
     titulo: "Preguntá como a un analista",
     texto: "Escribí la pregunta o tocá una de las sugerencias. El chat responde con cifras, tablas y gráficos, y podés repreguntar para afinar.",
     items: [
@@ -57,7 +79,7 @@ const PASOS: Paso[] = [
   },
   {
     icono: Pin,
-    eyebrow: "Paso 3 · Guardar",
+    eyebrow: "Paso 4 · Guardar",
     titulo: "Fijá lo que te sirve",
     texto: (
       <>
@@ -68,14 +90,14 @@ const PASOS: Paso[] = [
   },
   {
     icono: BarChart3,
-    eyebrow: "Paso 4 · Dashboards",
+    eyebrow: "Paso 5 · Dashboards",
     titulo: "Armá tableros vivos",
     texto: "En Dashboards creás tableros y ordenás sus widgets: cambiar el ancho, moverlos o quitarlos. La cuenta demo trae “Mantenimiento 2026” con cinco widgets.",
     ir: { href: "/dashboards", label: "Ver dashboards" },
   },
   {
     icono: FileText,
-    eyebrow: "Paso 5 · Reportes",
+    eyebrow: "Paso 6 · Reportes",
     titulo: "Pedile el resumen a la IA",
     texto: (
       <>
@@ -155,7 +177,12 @@ export function Tutorial({ userId }: { userId: string }) {
           </div>
 
           <div key={paso} className="rise mt-5">
-            <p className="num text-[11px] uppercase tracking-[0.2em] text-ember">{actual.eyebrow}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="num text-[11px] uppercase tracking-[0.2em] text-ember">{actual.eyebrow}</p>
+              {actual.destacado && (
+                <span className="rounded-full bg-ember px-2.5 py-0.5 text-[11px] font-medium text-ember-ink">{actual.destacado}</span>
+              )}
+            </div>
             <Dialog.Title className="mt-2 font-serif text-4xl leading-tight tracking-tight">{actual.titulo}</Dialog.Title>
             <Dialog.Description className="mt-3 text-[15px] text-ink-2">{actual.texto}</Dialog.Description>
             {actual.items && (
