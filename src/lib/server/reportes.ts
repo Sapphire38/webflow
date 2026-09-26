@@ -8,6 +8,7 @@ import { generateText } from "ai";
 import { type ChartSpec, calcularKpi, type Presentacion, presentacionSchema, resolverReceta } from "@/lib/data/chart";
 import { sinCjk } from "@/lib/chat/limpiar";
 import { type Estilo, instruccionesDeEstilo, leerEstilo } from "@/lib/data/estilo";
+import type { Proyeccion } from "@/lib/data/proyeccion";
 import { cargadorDeDatasets } from "./datasets";
 import { modelo } from "./llm";
 
@@ -41,6 +42,26 @@ export async function resolverWidgetsCon(supabase: SupabaseClient, userId: strin
       }
     }),
   );
+}
+
+/** Lo que el modelo necesita para narrar una proyección sin inventar: cifras, rango y cuánto confiar. */
+export function contextoProyeccion(p: Proyeccion, unidad?: string): string {
+  const u = unidad ? ` ${unidad}` : "";
+  const error = p.errorPct === null ? "sin error medido" : `error medido en el backtest: ±${p.errorPct}%`;
+  const lineas = [
+    `  Proyección (${p.metodo}; ${error}; rango probable del 80%):`,
+    ...p.proyectado.map((x) => `  - ${x.etiqueta}: ${x.valor}${u} (entre ${x.bajo} y ${x.alto})`),
+    ...(p.escenarios ?? []).map((e) => `  Escenario "${e.nombre}": ${e.diferenciaPct > 0 ? "+" : ""}${e.diferenciaPct}% contra la proyección base`),
+  ];
+  if (p.meta) {
+    const objetivo = `${p.meta.tipo === "acumulado" ? "acumulado" : "por período"}, ${p.meta.sentido} ${p.meta.valor}${u}`;
+    lineas.push(
+      p.meta.alcanzaEn
+        ? `  Meta (${objetivo}): se alcanza en ${p.meta.alcanzaEn} con probabilidad ${p.meta.probabilidad}%`
+        : `  Meta (${objetivo}): no se alcanza en el horizonte; probabilidad al final ${p.meta.probabilidad}%`,
+    );
+  }
+  return lineas.join("\n");
 }
 
 export class ReporteError extends Error {}
@@ -81,15 +102,16 @@ export async function redactarReporte(supabase: SupabaseClient, userId: string, 
       const s = w.spec as ChartSpec;
       const total = calcularKpi(s.datos, "suma");
       const filas = s.datos.map((d) => `  - ${d.etiqueta}: ${d.valor}${s.unidad ? ` ${s.unidad}` : ""}`).join("\n");
-      return `### ${w.titulo} (${s.tipo}; suma de todas las categorías: ${total})\n${filas}`;
+      return `### ${w.titulo} (${s.tipo}; suma de todas las categorías: ${total})\n${filas}${s.proyeccion ? `\n${contextoProyeccion(s.proyeccion, s.unidad)}` : ""}`;
     })
     .join("\n\n");
+  const hayProyecciones = conDatos.some((w) => w.spec?.proyeccion);
 
   let contenido: string;
   try {
     const { text } = await generateText({
       model: modelo(),
-      system: `Escribís el resumen ejecutivo de un reporte en castellano rioplatense. Escribí únicamente en español, sin palabras ni caracteres de otros idiomas. Usá SOLO las cifras provistas, con su unidad. Sin saludos, sin preguntas, sin emojis. Formato: un párrafo de hallazgo principal y después una lista de 3 a 5 puntos con '- '. Podés usar **negrita**. Máximo 200 palabras.\n${instruccionesDeEstilo(estilo)}`,
+      system: `Escribís el resumen ejecutivo de un reporte en castellano rioplatense. Escribí únicamente en español, sin palabras ni caracteres de otros idiomas. Usá SOLO las cifras provistas, con su unidad. Sin saludos, sin preguntas, sin emojis. Formato: un párrafo de hallazgo principal y después una lista de 3 a 5 puntos con '- '. Podés usar **negrita**. Máximo 200 palabras.${hayProyecciones ? " Cerrá la lista con un punto que empiece con **Hacia dónde va**: la proyección con su rango, el error medido y, si hay, escenarios y meta; aclarando que extrapola la tendencia de los datos." : ""}\n${instruccionesDeEstilo(estilo)}`,
       prompt: `Reporte: ${dash.nombre}\n\nDatos de esta corrida:\n\n${contexto}`,
     });
     contenido = sinCjk(text).trim();

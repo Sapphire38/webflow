@@ -40,9 +40,20 @@ export const escenarioSchema = z.object({
 });
 export type Escenario = z.infer<typeof escenarioSchema>;
 
+export const metaSchema = z.object({
+  valor: z.number().describe("El objetivo, en la unidad de la métrica"),
+  tipo: z
+    .enum(["periodo", "acumulado"])
+    .default("periodo")
+    .describe("periodo: que un período llegue al valor. acumulado: que la suma de los períodos proyectados llegue"),
+  sentido: z.enum(["superar", "bajar"]).default("superar").describe("superar: llegar o pasar el valor. bajar: quedar en el valor o por debajo"),
+});
+export type Meta = z.infer<typeof metaSchema>;
+
 export const proyeccionSchema = z.object({
   horizonte: z.number().int().min(1).max(24).describe("Cuántos períodos proyectar hacia adelante"),
   escenarios: z.array(escenarioSchema).max(3).optional().describe("Qué pasaría si: variantes de la proyección base"),
+  meta: metaSchema.optional().describe("Objetivo a evaluar: cuándo se alcanza y con qué probabilidad"),
 });
 export type PedidoProyeccion = z.infer<typeof proyeccionSchema>;
 
@@ -58,10 +69,18 @@ export interface ResultadoEscenario {
   diferenciaPct: number;
 }
 
+export interface ResultadoMeta extends Meta {
+  /** Primer período proyectado en el que se cumple, o null si no se cumple en el horizonte. */
+  alcanzaEn: string | null;
+  /** Probabilidad (0-100) de cumplirla en `alcanzaEn`, o al final del horizonte si no se alcanza. */
+  probabilidad: number;
+}
+
 export interface Proyeccion {
   metodo: Metodo;
   proyectado: PuntoProyectado[];
   escenarios?: ResultadoEscenario[];
+  meta?: ResultadoMeta;
   /** Error porcentual medio al proyectar los últimos períodos conocidos (backtest). */
   errorPct: number | null;
   periodosEvaluados: number;
@@ -179,8 +198,44 @@ function backtest(y: number[], metodo: Metodo, g: Granularidad, horizonte: numbe
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
 
+/** Función de distribución de la normal estándar (aproximación de Abramowitz y Stegun, error < 1e-7). */
+function normal(z: number): number {
+  const t = 1 / (1 + 0.3275911 * (Math.abs(z) / Math.SQRT2));
+  const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  const erf = 1 - poly * Math.exp(-(z * z) / 2);
+  return z >= 0 ? (1 + erf) / 2 : (1 - erf) / 2;
+}
+
+/**
+ * Evalúa una meta sobre la proyección, tratando cada período como una normal centrada
+ * en lo proyectado con el desvío de la banda. En el acumulado las varianzas se suman
+ * (supone errores independientes: si algo, la probabilidad queda optimista en los extremos).
+ */
+function evaluarMeta(meta: Meta, centros: number[], desvios: number[], etiquetas: string[]): ResultadoMeta {
+  const cumple = (v: number) => (meta.sentido === "superar" ? v >= meta.valor : v <= meta.valor);
+  const probabilidad = (centro: number, desvio: number) => {
+    if (desvio === 0) return cumple(centro) ? 1 : 0;
+    const p = normal((centro - meta.valor) / desvio);
+    return meta.sentido === "superar" ? p : 1 - p;
+  };
+  let acumulado = 0;
+  let varianza = 0;
+  let ultima = 0;
+  for (let i = 0; i < centros.length; i++) {
+    const [centro, desvio] =
+      meta.tipo === "acumulado"
+        ? [(acumulado += centros[i]), Math.sqrt((varianza += desvios[i] ** 2))]
+        : [centros[i], desvios[i]];
+    ultima = probabilidad(centro, desvio);
+    // Un tope acumulado siempre se cumple al principio: lo que importa es cómo termina el horizonte.
+    const soloAlFinal = meta.tipo === "acumulado" && meta.sentido === "bajar" && i < centros.length - 1;
+    if (!soloAlFinal && cumple(centro)) return { ...meta, alcanzaEn: etiquetas[i], probabilidad: Math.round(ultima * 100) };
+  }
+  return { ...meta, alcanzaEn: null, probabilidad: Math.round(ultima * 100) };
+}
+
 /** Proyecta valores ya agregados. `etiquetas` son las de los períodos futuros, en orden. */
-export function pronosticar(y: number[], g: Granularidad, etiquetas: string[]): Omit<Proyeccion, "parcial"> {
+export function pronosticar(y: number[], g: Granularidad, etiquetas: string[], meta?: Meta): Omit<Proyeccion, "parcial"> {
   if (y.length < MIN_PERIODOS)
     throw new ConsultaError(
       `Para proyectar hacen falta al menos ${MIN_PERIODOS} períodos cerrados y hay ${y.length}. Probá con una granularidad más fina.`,
@@ -201,7 +256,10 @@ export function pronosticar(y: number[], g: Granularidad, etiquetas: string[]): 
     };
   });
   const { errorPct, periodos } = backtest(y, metodo, g, etiquetas.length);
-  return { metodo, proyectado, errorPct, periodosEvaluados: periodos };
+  const resultado = { metodo, proyectado, errorPct, periodosEvaluados: periodos };
+  if (!meta) return resultado;
+  const desvios = proyectado.map((_, i) => sigma * Math.sqrt(i + 1));
+  return { ...resultado, meta: evaluarMeta(meta, proyectado.map((p) => p.valor), desvios, etiquetas) };
 }
 
 const suma = (xs: number[]) => xs.reduce((a, v) => a + v, 0);
@@ -226,8 +284,8 @@ function aplicarEscenario(
 }
 
 /** Serie real + proyección, listas para graficar. El período en curso se proyecta, no se muestra. */
-export function proyectar(filas: Fila[], campos: Campo[], consulta: Consulta, pedido: PedidoProyeccion): { historico: Par[]; proyeccion: Proyeccion } {
-  const { horizonte, escenarios } = proyeccionSchema.parse(pedido);
+export function proyectar(filas: Fila[], campos: Campo[], consulta: Consulta, pedido: z.input<typeof proyeccionSchema>): { historico: Par[]; proyeccion: Proyeccion } {
+  const { horizonte, escenarios, meta } = proyeccionSchema.parse(pedido);
   const serie = serieTemporal(filas, campos, consulta);
   const g = serie.granularidad;
   const cerrados = serie.parcial ? serie.puntos.slice(0, -1) : serie.puntos;
@@ -241,6 +299,7 @@ export function proyectar(filas: Fila[], campos: Campo[], consulta: Consulta, pe
     cerrados.map((p) => p.valor),
     g,
     etiquetas,
+    meta,
   );
   const aditiva = consulta.operacion === "sumar" || consulta.operacion === "contar";
   const piso = cerrados.every((p) => p.valor >= 0) ? 0 : Number.NEGATIVE_INFINITY;
