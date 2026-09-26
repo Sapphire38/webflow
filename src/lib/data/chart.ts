@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { type Consulta, consultaSchema, type Par } from "./engine";
+import { agregar, type Campo, type Consulta, consultaSchema, type Fila, type Par } from "./engine";
+import { type PedidoProyeccion, type Proyeccion, proyeccionSchema, proyectar } from "./proyeccion";
 
 export const TIPOS_GRAFICO = ["barras", "torta", "linea", "area"] as const;
 
@@ -14,11 +15,19 @@ export const vizSchema = z.object({
 export interface Receta {
   datasetId: string;
   consulta: Consulta;
+  proyeccion?: PedidoProyeccion;
 }
+
+export const recetaSchema = z.object({
+  datasetId: z.string().min(1),
+  consulta: consultaSchema,
+  proyeccion: proyeccionSchema.optional(),
+});
 
 export interface ChartSpec extends z.infer<typeof vizSchema> {
   datos: Par[];
   receta: Receta;
+  proyeccion?: Proyeccion;
 }
 
 export const MAX_DATOS = 24;
@@ -29,9 +38,26 @@ export const graficarSchema = vizSchema.extend({
   consulta: consultaSchema,
 });
 
-export function armarSpec(viz: z.infer<typeof vizSchema>, datos: Par[], receta: Receta): ChartSpec {
+export const proyectarSchema = z.object({
+  titulo: z.string().min(1).max(120),
+  unidad: z.string().max(40).optional(),
+  datasetId: z.string().min(1),
+  consulta: consultaSchema,
+  ...proyeccionSchema.shape,
+});
+
+export function armarSpec(viz: z.infer<typeof vizSchema>, datos: Par[], receta: Receta, proyeccion?: Proyeccion): ChartSpec {
   const tope = viz.tipo === "torta" ? MAX_DATOS_TORTA : MAX_DATOS;
+  // En una proyección importa el tramo más reciente, que es el que se continúa.
+  if (proyeccion) return { ...viz, datos: datos.slice(-tope), receta, proyeccion };
   return { ...viz, datos: datos.slice(0, tope), receta };
+}
+
+/** Ejecuta una receta: lo que usan el chat, los widgets y los reportes para recalcular. */
+export function resolverReceta(filas: Fila[], campos: Campo[], receta: Receta): { datos: Par[]; proyeccion?: Proyeccion } {
+  if (!receta.proyeccion) return { datos: agregar(filas, campos, receta.consulta) };
+  const { historico, proyeccion } = proyectar(filas, campos, receta.consulta, receta.proyeccion);
+  return { datos: historico.slice(-MAX_DATOS), proyeccion };
 }
 
 export const PRESENTACIONES = ["grafico", "kpi", "tabla"] as const;

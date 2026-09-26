@@ -166,7 +166,7 @@ function campoDe(fila: Fila, nombre: string): unknown {
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 /** Devuelve [clave ordenable, etiqueta legible] del período. */
-function periodo(d: Date, g: (typeof GRANULARIDADES)[number]): [string, string] {
+export function periodo(d: Date, g: (typeof GRANULARIDADES)[number]): [string, string] {
   const y = d.getUTCFullYear();
   const m = d.getUTCMonth();
   const dd = d.getUTCDate();
@@ -211,8 +211,8 @@ function reducir(valores: number[], op: (typeof OPERACIONES)[number], filas: num
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
 
-export function agregar(filas: Fila[], campos: Campo[], entrada: Consulta): Par[] {
-  const c = consultaSchema.parse(entrada);
+/** Valida la consulta contra los campos y devuelve el campo de agrupación ya resuelto. */
+function validar(c: Consulta, campos: Campo[]): Campo | undefined {
   const buscar = (n: string) => campos.find((x) => x.nombre.toLowerCase() === n.toLowerCase());
   const validos = campos.map((x) => x.nombre).join(", ");
 
@@ -231,20 +231,25 @@ export function agregar(filas: Fila[], campos: Campo[], entrada: Consulta): Par[
   for (const k of Object.keys(c.filtros ?? {})) {
     if (!buscar(k)) throw new ConsultaError(`No existe el campo "${k}" para filtrar. Válidos: ${validos}`, "CAMPO_INEXISTENTE");
   }
+  return grupo;
+}
 
+function filtrarOFallar(filas: Fila[], c: Consulta): Fila[] {
   const filtradas = filtrar(filas, c.filtros);
   if (filtradas.length === 0) throw new ConsultaError("Ninguna fila cumple los filtros.", "SIN_FILAS");
+  return filtradas;
+}
 
-  const valorDe = (f: Fila) => (c.campo ? aNumero(campoDe(f, c.campo)) : null);
+interface Grupo {
+  clave: string;
+  etiqueta: string;
+  valor: number;
+}
 
-  if (!grupo) {
-    const vals = filtradas.map(valorDe).filter((n): n is number => n !== null);
-    const etiqueta = c.operacion === "contar" ? "Cantidad" : `${c.operacion} de ${c.campo}`;
-    return [{ etiqueta, valor: redondear(reducir(vals, c.operacion, filtradas.length)) }];
-  }
-
+function agrupar(filtradas: Fila[], grupo: Campo, c: Consulta): Grupo[] {
   const cronologico = grupo.tipo === "fecha";
   const gran = c.granularidad ?? "mes";
+  const valorDe = (f: Fila) => (c.campo ? aNumero(campoDe(f, c.campo)) : null);
   const grupos = new Map<string, { etiqueta: string; valores: number[]; filas: number }>();
   for (const f of filtradas) {
     const crudo = campoDe(f, grupo.nombre);
@@ -265,12 +270,24 @@ export function agregar(filas: Fila[], campos: Campo[], entrada: Consulta): Par[
     grupos.set(clave, g);
   }
 
-  let pares = [...grupos.entries()].map(([clave, g]) => ({
-    clave,
-    etiqueta: g.etiqueta,
-    valor: reducir(g.valores, c.operacion, g.filas),
-  }));
-  pares = pares.filter((p) => Number.isFinite(p.valor));
+  return [...grupos.entries()]
+    .map(([clave, g]) => ({ clave, etiqueta: g.etiqueta, valor: reducir(g.valores, c.operacion, g.filas) }))
+    .filter((p) => Number.isFinite(p.valor));
+}
+
+export function agregar(filas: Fila[], campos: Campo[], entrada: Consulta): Par[] {
+  const c = consultaSchema.parse(entrada);
+  const grupo = validar(c, campos);
+  const filtradas = filtrarOFallar(filas, c);
+
+  if (!grupo) {
+    const vals = filtradas.map((f) => (c.campo ? aNumero(campoDe(f, c.campo)) : null)).filter((n): n is number => n !== null);
+    const etiqueta = c.operacion === "contar" ? "Cantidad" : `${c.operacion} de ${c.campo}`;
+    return [{ etiqueta, valor: redondear(reducir(vals, c.operacion, filtradas.length)) }];
+  }
+
+  const cronologico = grupo.tipo === "fecha";
+  let pares = agrupar(filtradas, grupo, c);
 
   const orden = c.orden ?? (cronologico ? "etiqueta" : "valor_desc");
   if (orden === "valor_desc") pares.sort((a, b) => b.valor - a.valor);
@@ -287,4 +304,81 @@ export function agregar(filas: Fila[], campos: Campo[], entrada: Consulta): Par[
     }
   }
   return pares.map((p) => ({ etiqueta: p.etiqueta, valor: redondear(p.valor) }));
+}
+
+export type Granularidad = (typeof GRANULARIDADES)[number];
+
+/** Primer día del período, en UTC. Las claves de `periodo` se pueden leer de vuelta. */
+export function inicioDePeriodo(clave: string, g: Granularidad): Date {
+  if (g === "anio") return new Date(Date.UTC(Number(clave), 0, 1));
+  if (g === "trimestre") {
+    const [y, t] = clave.split("-T");
+    return new Date(Date.UTC(Number(y), (Number(t) - 1) * 3, 1));
+  }
+  if (g === "mes") {
+    const [y, m] = clave.split("-");
+    return new Date(Date.UTC(Number(y), Number(m) - 1, 1));
+  }
+  return new Date(`${clave}T00:00:00Z`);
+}
+
+/** Inicio del período siguiente al que empieza en `d`. */
+export function siguientePeriodo(d: Date, g: Granularidad): Date {
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth();
+  if (g === "anio") return new Date(Date.UTC(y + 1, 0, 1));
+  if (g === "trimestre") return new Date(Date.UTC(y, m + 3, 1));
+  if (g === "mes") return new Date(Date.UTC(y, m + 1, 1));
+  return new Date(d.getTime() + (g === "semana" ? 7 : 1) * 86_400_000);
+}
+
+
+export interface SerieTemporal {
+  granularidad: Granularidad;
+  /** Períodos consecutivos, del más viejo al más nuevo, con los huecos ya completados. */
+  puntos: Grupo[];
+  /** Etiqueta del último período si los datos terminan antes de que cierre (se descarta al proyectar). */
+  parcial?: string;
+}
+
+/**
+ * La misma agregación que `agregar`, pero como serie de tiempo completa: sin `top`,
+ * siempre cronológica y sin huecos. Los períodos sin filas valen 0 si la operación
+ * es aditiva y se interpolan si no (un promedio no se vuelve cero porque no hubo datos).
+ */
+export function serieTemporal(filas: Fila[], campos: Campo[], entrada: Consulta): SerieTemporal {
+  const c = consultaSchema.parse(entrada);
+  const grupo = validar(c, campos);
+  if (!grupo || grupo.tipo !== "fecha")
+    throw new ConsultaError("Para proyectar hay que agrupar por un campo de fecha.", "PROYECCION_SIN_FECHA");
+  const g = c.granularidad ?? "mes";
+  const filtradas = filtrarOFallar(filas, c);
+  const grupos = agrupar(filtradas, grupo, c).sort((a, b) => (a.clave < b.clave ? -1 : 1));
+  if (grupos.length === 0) throw new ConsultaError(`El campo "${grupo.nombre}" no tiene fechas válidas.`, "SIN_FILAS");
+
+  const porClave = new Map(grupos.map((p) => [p.clave, p]));
+  const aditiva = c.operacion === "sumar" || c.operacion === "contar";
+  const puntos: (Grupo | null)[] = [];
+  const fin = inicioDePeriodo(grupos[grupos.length - 1].clave, g).getTime();
+  for (let d = inicioDePeriodo(grupos[0].clave, g); d.getTime() <= fin; d = siguientePeriodo(d, g)) {
+    const [clave, etiqueta] = periodo(d, g);
+    puntos.push(porClave.get(clave) ?? (aditiva ? { clave, etiqueta, valor: 0 } : { clave, etiqueta, valor: Number.NaN }));
+  }
+  const completos = puntos.map((p, i) => {
+    if (!p || Number.isFinite(p.valor)) return p as Grupo;
+    const antes = puntos.slice(0, i).reverse().find((x) => x && Number.isFinite(x.valor)) as Grupo;
+    const j = puntos.findIndex((x, k) => k > i && x && Number.isFinite(x.valor));
+    const despues = puntos[j] as Grupo;
+    const iAntes = puntos.indexOf(antes);
+    return { ...p, valor: antes.valor + ((despues.valor - antes.valor) * (i - iAntes)) / (j - iAntes) };
+  });
+
+  let ultima = 0;
+  for (const f of filtradas) {
+    const d = aFecha(campoDe(f, grupo.nombre));
+    if (d && d.getTime() > ultima) ultima = d.getTime();
+  }
+  const cierre = siguientePeriodo(new Date(fin), g).getTime() - 86_400_000;
+  const parcial = g !== "dia" && ultima < cierre ? completos[completos.length - 1].etiqueta : undefined;
+  return { granularidad: g, puntos: completos, parcial };
 }

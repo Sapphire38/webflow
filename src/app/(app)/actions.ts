@@ -3,14 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { type ChartSpec, presentacionSchema, vizSchema } from "@/lib/data/chart";
+import { type ChartSpec, presentacionSchema, recetaSchema, resolverReceta, vizSchema } from "@/lib/data/chart";
 import { destinoSchema, proximaEjecucion, recurrenciaSchema } from "@/lib/data/programacion";
 import { cifrarDestinos, ejecutarProgramacion, emailConfigurado, type FilaProgramacion } from "@/lib/server/envios";
 import { type Borrador, generarReporteCon, guardarReporte, redactarReporte, resolverWidgetsCon, type WidgetResuelto } from "@/lib/server/reportes";
 import { estiloSchema } from "@/lib/data/estilo";
 import { BASE_PATH, urlPublica } from "@/lib/env";
 import { headers } from "next/headers";
-import { agregar, type Campo, consultaSchema, type Fila, inferirCampos } from "@/lib/data/engine";
+import { type Campo, type Fila, inferirCampos } from "@/lib/data/engine";
 import { MAX_FILAS, parsearCsv } from "@/lib/data/csv";
 import { FuenteRemotaError, sanearHeaders, validarUrlPublica } from "@/lib/data/remote";
 import { cifrar, descifrar } from "@/lib/server/cifrado";
@@ -101,7 +101,7 @@ const guardarWidgetSchema = z.object({
   destino: z.union([z.object({ dashboardId: z.string().uuid() }), z.object({ nuevo: z.string().trim().min(1).max(80) })]),
   titulo: z.string().trim().min(1).max(120),
   viz: vizSchema,
-  receta: z.object({ datasetId: z.string().uuid(), consulta: consultaSchema }),
+  receta: recetaSchema.extend({ datasetId: z.string().uuid() }),
   presentacion: presentacionSchema,
 });
 
@@ -115,7 +115,7 @@ export async function guardarWidget(input: z.input<typeof guardarWidgetSchema>):
   const ds = await cargadorDeDatasets(supabase)(receta.datasetId);
   if (!ds) return { ok: false, error: "El dataset de este gráfico ya no existe." };
   try {
-    agregar(ds.filas, ds.campos, receta.consulta);
+    resolverReceta(ds.filas, ds.campos, receta);
   } catch (e) {
     return { ok: false, error: `La consulta ya no reproduce: ${(e as Error).message}` };
   }

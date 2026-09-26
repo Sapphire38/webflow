@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Line,
   LineChart,
   Pie,
@@ -40,8 +41,77 @@ function compacto(n: number) {
   return new Intl.NumberFormat("es-AR", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
 
+const METODO: Record<NonNullable<ChartSpec["proyeccion"]>["metodo"], string> = {
+  lineal: "tendencia lineal",
+  holt: "tendencia suavizada",
+  holt_winters: "tendencia con estacionalidad",
+};
+
+interface PuntoGrafico {
+  etiqueta: string;
+  real?: number;
+  proyectado?: number;
+  banda?: [number, number];
+}
+
+function TipProyeccion({ active, payload, unidad }: { active?: boolean; payload?: { payload: PuntoGrafico }[]; unidad?: string }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  const esReal = d.real !== undefined;
+  return (
+    <div className="rounded-lg border border-line bg-card px-3 py-2 text-xs shadow-lg">
+      <p className="text-ink-2">
+        {d.etiqueta} · {esReal ? "real" : "proyectado"}
+      </p>
+      <p className="num mt-0.5 text-sm font-semibold text-ink">
+        {formatoNumero((esReal ? d.real : d.proyectado) ?? 0)} {unidad}
+      </p>
+      {!esReal && d.banda && (
+        <p className="num mt-0.5 text-ink-3">
+          entre {formatoNumero(d.banda[0])} y {formatoNumero(d.banda[1])}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Lo real en línea llena, lo proyectado punteado y el rango probable sombreado detrás. */
+function GraficoProyeccion({ spec, alto }: { spec: ChartSpec; alto: number }) {
+  const p = spec.proyeccion!;
+  const ultimo = spec.datos[spec.datos.length - 1];
+  const puntos: PuntoGrafico[] = [
+    ...spec.datos.map((d) => ({ etiqueta: d.etiqueta, real: d.valor })),
+    ...p.proyectado.map((d) => ({ etiqueta: d.etiqueta, proyectado: d.valor, banda: [d.bajo, d.alto] as [number, number] })),
+  ];
+  // El último punto real también abre la línea proyectada, así no queda un salto entre las dos.
+  if (ultimo) puntos[spec.datos.length - 1] = { ...puntos[spec.datos.length - 1], proyectado: ultimo.valor, banda: [ultimo.valor, ultimo.valor] };
+  return (
+    <div>
+      <div style={{ height: alto }} className="w-full">
+        <ResponsiveContainer>
+          <ComposedChart data={puntos} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 4" />
+            <XAxis dataKey="etiqueta" tick={eje} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={16} />
+            <YAxis tick={eje} tickLine={false} axisLine={false} tickFormatter={compacto} />
+            <Tooltip content={<TipProyeccion unidad={spec.unidad} />} cursor={{ stroke: "var(--line)" }} />
+            <Area type="monotone" dataKey="banda" stroke="none" fill="var(--chart-1)" fillOpacity={0.14} isAnimationActive={false} />
+            <Line type="monotone" dataKey="real" stroke="var(--chart-1)" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+            <Line type="monotone" dataKey="proyectado" stroke="var(--chart-1)" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 5 }} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="mt-3 text-xs text-ink-3">
+        Proyección por {METODO[p.metodo]} · banda: rango probable (80%)
+        {p.errorPct !== null && ` · en los últimos ${p.periodosEvaluados} períodos le erró ±${formatoNumero(p.errorPct)}%`}
+        {p.parcial && ` · ${p.parcial} todavía no cerró: se proyecta`}
+      </p>
+    </div>
+  );
+}
+
 export function Grafico({ spec, alto = 260 }: { spec: ChartSpec; alto?: number }) {
   const datos = spec.datos;
+  if (spec.proyeccion && datos.length > 0) return <GraficoProyeccion spec={spec} alto={alto} />;
   if (datos.length === 0) return <p className="py-10 text-center text-sm text-ink-3">Sin datos</p>;
   const tip = <Tooltip content={<Tip unidad={spec.unidad} />} cursor={{ fill: "var(--paper-2)" }} />;
   const grid = <CartesianGrid vertical={false} stroke="var(--line)" strokeDasharray="2 4" />;

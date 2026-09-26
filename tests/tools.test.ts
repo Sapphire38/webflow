@@ -68,6 +68,26 @@ describe("tools del chat", () => {
     expect(sinDs.codigo).toBe("DATASET_INEXISTENTE");
   });
 
+  it("proyectar devuelve lo real, lo proyectado y una receta que se puede guardar", async () => {
+    const { client } = supabaseFalso();
+    const consulta = { agruparPor: "fecha", granularidad: "semana" as const, operacion: "sumar" as const, campo: "costo" };
+    const r = (await herramientas(client).proyectar.execute!({ titulo: "Costo semanal", datasetId: "ds-1", consulta, horizonte: 4 }, opts)) as {
+      spec: { tipo: string; datos: unknown[]; receta: unknown; proyeccion: { metodo: string; proyectado: unknown[]; errorPct: number | null } };
+    };
+    expect(r.spec.tipo).toBe("linea");
+    expect(r.spec.receta).toEqual({ datasetId: "ds-1", consulta, proyeccion: { horizonte: 4 } });
+    expect(r.spec.proyeccion.metodo).toBe("holt");
+    expect(r.spec.proyeccion.proyectado).toHaveLength(4);
+    expect(r.spec.proyeccion.errorPct).not.toBeNull();
+  });
+
+  it("proyectar explica cuando no hay historia suficiente", async () => {
+    const { client } = supabaseFalso();
+    const consulta = { agruparPor: "fecha", granularidad: "trimestre" as const, operacion: "contar" as const };
+    const r = (await herramientas(client).proyectar.execute!({ titulo: "x", datasetId: "ds-1", consulta, horizonte: 2 }, opts)) as { codigo: string };
+    expect(r.codigo).toBe("POCOS_PERIODOS");
+  });
+
   it("sugerir_preguntas deduplica y limita a 3", async () => {
     const { client } = supabaseFalso();
     const r = (await herramientas(client).sugerir_preguntas.execute!({ preguntas: ["Abrilo por planta", "Abrilo por planta", "¿Y por mes?"] }, opts)) as { preguntas: string[] };
