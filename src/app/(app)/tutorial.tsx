@@ -1,7 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { ArrowLeft, ArrowRight, BarChart3, CircleHelp, Database, FileText, LayoutTemplate, MessageSquare, Pin, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BarChart3, CircleHelp, Database, FileText, LayoutTemplate, MessageSquare, Pin, Sparkles, TrendingUp, X } from "lucide-react";
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ const PASOS: Paso[] = [
         un motor determinístico hace las cuentas: <strong>los números no los inventa la IA</strong>.
       </>
     ),
-    items: ["Cargás datos, incluso el CMS de tu sitio de Webflow", "Preguntás en el chat", "Guardás los gráficos en un dashboard", "Generás un reporte ejecutivo"],
+    items: ["Cargás datos, incluso el CMS de tu sitio de Webflow", "Preguntás en el chat", "Proyectás hacia dónde va y qué pasa si", "Guardás los gráficos en un dashboard", "Generás un reporte ejecutivo"],
   },
   {
     icono: Database,
@@ -78,8 +78,28 @@ const PASOS: Paso[] = [
     ir: { href: "/chat", label: "Abrir el chat" },
   },
   {
+    icono: TrendingUp,
+    eyebrow: "Paso 4 · Futuros",
+    titulo: "Mirá hacia dónde va",
+    destacado: "Nuevo",
+    texto: (
+      <>
+        Pedile al chat que proyecte cualquier métrica con fecha y probá escenarios de <strong>qué pasaría si</strong>. Lo real se ve
+        en línea llena, lo proyectado punteado y la banda marca el rango probable. Siempre te dice cuánto le erró al proyectar
+        los últimos períodos que ya conoce.
+      </>
+    ),
+    items: [
+      "“¿Cómo va a seguir el costo semanal las próximas 6 semanas?”",
+      "“¿Qué pasa si Córdoba baja 30%?” (hasta 3 escenarios, en total o por segmento)",
+      "“¿Cuándo acumulamos 9 millones de costo?” (cuándo llegás a la meta y con qué probabilidad)",
+      "Guardalo en un dashboard: se vuelve a proyectar con cada dato nuevo",
+    ],
+    ir: { href: "/chat", label: "Probar una proyección" },
+  },
+  {
     icono: Pin,
-    eyebrow: "Paso 4 · Guardar",
+    eyebrow: "Paso 5 · Guardar",
     titulo: "Fijá lo que te sirve",
     texto: (
       <>
@@ -90,14 +110,14 @@ const PASOS: Paso[] = [
   },
   {
     icono: BarChart3,
-    eyebrow: "Paso 5 · Dashboards",
+    eyebrow: "Paso 6 · Dashboards",
     titulo: "Armá tableros vivos",
     texto: "En Dashboards creás tableros y ordenás sus widgets: cambiar el ancho, moverlos o quitarlos. La cuenta demo trae “Mantenimiento 2026” con cinco widgets.",
     ir: { href: "/dashboards", label: "Ver dashboards" },
   },
   {
     icono: FileText,
-    eyebrow: "Paso 6 · Reportes",
+    eyebrow: "Paso 7 · Reportes",
     titulo: "Pedile el resumen a la IA",
     texto: (
       <>
@@ -108,6 +128,7 @@ const PASOS: Paso[] = [
     items: [
       "Estilo propio: color de acento, tipografía, pie de página y tono",
       "Instrucciones para la IA sobre qué destacar",
+      "Si el tablero tiene proyecciones, cierra con un punto “Hacia dónde va”",
       "Programar envío: recibirlo por Slack o email cada día, semana o mes",
       "Imprimir o exportar a PDF",
     ],
