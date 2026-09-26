@@ -8,7 +8,7 @@ import { destinoSchema, proximaEjecucion, recurrenciaSchema } from "@/lib/data/p
 import { cifrarDestinos, ejecutarProgramacion, emailConfigurado, type FilaProgramacion } from "@/lib/server/envios";
 import { type Borrador, generarReporteCon, guardarReporte, redactarReporte, resolverWidgetsCon, type WidgetResuelto } from "@/lib/server/reportes";
 import { estiloSchema } from "@/lib/data/estilo";
-import { BASE_PATH } from "@/lib/env";
+import { BASE_PATH, urlPublica } from "@/lib/env";
 import { headers } from "next/headers";
 import { agregar, type Campo, consultaSchema, type Fila, inferirCampos } from "@/lib/data/engine";
 import { MAX_FILAS, parsearCsv } from "@/lib/data/csv";
@@ -260,10 +260,7 @@ const programacionSchema = z.object({
 });
 
 async function baseUrl() {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}${BASE_PATH}`;
+  return `${urlPublica((await headers()).get("origin"))}${BASE_PATH}`;
 }
 
 export async function crearProgramacion(input: z.input<typeof programacionSchema>): Promise<Resultado<{ proxima: string }>> {

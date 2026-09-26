@@ -11,3 +11,20 @@ export function supabaseEnv() {
   }
   return { url, anonKey };
 }
+
+/**
+ * URL pública de la app. En Webflow Cloud el servidor ve un host interno
+ * (*.cosmic.webflow.services), así que para links absolutos (emails, OAuth, reportes)
+ * se usa NEXT_PUBLIC_SITE_URL, o el `origin` del navegador cuando lo hay.
+ */
+export function urlPublica(origenPedido?: string | null): string {
+  const env = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  if (env) return env;
+  if (origenPedido && !origenPedido.includes(".cosmic.webflow.services")) return origenPedido;
+  return "https://webflow-eeebd5.webflow.io";
+}
+
+/** Redirect relativo: el navegador lo resuelve contra la URL pública, sea cual sea el host interno. */
+export function redirigir(ruta: string, status = 307): Response {
+  return new Response(null, { status, headers: { Location: `${BASE_PATH}${ruta}` } });
+}

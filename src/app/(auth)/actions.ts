@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { destinoSeguro, urlDeCallback } from "@/lib/auth/redirect";
-import { BASE_PATH } from "@/lib/env";
+import { BASE_PATH, urlPublica } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
 export interface EstadoForm {
@@ -16,12 +16,8 @@ const email = z.string().trim().email("Ingresá un email válido.");
 const password = z.string().min(8, "La contraseña necesita al menos 8 caracteres.");
 
 async function origen() {
-  const h = await headers();
-  const o = h.get("origin");
-  if (o) return o;
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
+  // El `origin` del navegador es la URL pública; el host que ve el servidor puede ser interno.
+  return urlPublica((await headers()).get("origin"));
 }
 
 /** Los mensajes de Supabase vienen en inglés; traducimos los que ve un usuario. */

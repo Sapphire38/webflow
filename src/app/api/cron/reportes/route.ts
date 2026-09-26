@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
-import { BASE_PATH } from "@/lib/env";
+import { BASE_PATH, urlPublica } from "@/lib/env";
 import { correrVencidas } from "@/lib/server/envios";
 
 
@@ -23,7 +23,7 @@ async function manejar(req: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return Response.json({ error: "Falta SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
   const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const resultados = await correrVencidas(admin, `${req.nextUrl.origin}${BASE_PATH}`);
+  const resultados = await correrVencidas(admin, `${urlPublica()}${BASE_PATH}`);
   return Response.json({ ejecutadas: resultados.length, resultados });
 }
 
